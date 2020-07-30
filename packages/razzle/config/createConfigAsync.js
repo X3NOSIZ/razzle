@@ -19,6 +19,7 @@ const WebpackBar = require('webpackbar');
 const ManifestPlugin = require('webpack-manifest-plugin');
 const modules = require('./modules');
 const postcssLoadConfig = require('postcss-load-config');
+const resolveRequest = require('razzle-dev-utils/resolveRequest');
 const logger = require('razzle-dev-utils/logger');
 const razzlePaths = require('razzle/config/paths');
 const getCacheIdentifier = require('react-dev-utils/getCacheIdentifier');
@@ -137,6 +138,32 @@ module.exports = (
     const additionalModulePaths = modulesConfig.additionalModulePaths || [];
     const additionalAliases = modulesConfig.additionalAliases || {};
     const additionalIncludes = modulesConfig.additionalIncludes || [];
+
+    const nodeExternalsFunc = nodeExternals({
+      whitelist: [
+        IS_DEV ? 'webpack/hot/poll?300' : null,
+        /\.(eot|woff|woff2|ttf|otf)$/,
+        /\.(svg|png|jpg|jpeg|gif|ico)$/,
+        /\.(mp4|mp3|ogg|swf|webp)$/,
+        /\.(css|scss|sass|sss|less)$/,
+      ].filter(x => x),
+    });
+
+    const razzleNodeExternalsFunc = (context, request, callback) => {
+
+        let res;
+
+        try {
+          res = resolveRequest(request, `${context}/`)
+        } catch (err) {
+          // If the request cannot be resolved, we need to tell webpack to
+          // "bundle" it so that webpack shows an error (that it cannot be
+          // resolved).
+          return callback()
+        }
+
+        return nodeExternalsFunc(context, res, callback);
+    }
 
     // This is our base webpack config.
     let config = {
@@ -296,17 +323,7 @@ module.exports = (
       };
 
       // We need to tell webpack what to bundle into our Node bundle.
-      config.externals = [
-        nodeExternals({
-          whitelist: [
-            IS_DEV ? 'webpack/hot/poll?300' : null,
-            /\.(eot|woff|woff2|ttf|otf)$/,
-            /\.(svg|png|jpg|jpeg|gif|ico)$/,
-            /\.(mp4|mp3|ogg|swf|webp)$/,
-            /\.(css|scss|sass|sss|less)$/,
-          ].filter(x => x),
-        }),
-      ];
+      config.externals = [razzleNodeExternalsFunc];
 
       // Specify webpack Node.js output path and filename
       config.output = {
