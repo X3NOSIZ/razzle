@@ -150,6 +150,23 @@ module.exports = (
     });
 
     const razzleNodeExternalsFunc = (context, request, callback) => {
+      const isLocal =
+        request.startsWith('.') ||
+        // Always check for unix-style path, as webpack sometimes
+        // normalizes as posix.
+        path.posix.isAbsolute(request) ||
+        // When on Windows, we also want to check for Windows-specific
+        // absolute paths.
+        (process.platform === 'win32' && path.win32.isAbsolute(request))
+
+      // Relative requires don't need custom resolution, because they
+      // are relative to requests we've already resolved here.
+      // Absolute requires (require('/foo')) are extremely uncommon, but
+      // also have no need for customization as they're already resolved.
+      if (isLocal) {
+        return callback()
+      }
+
       let res;
       try {
         res = resolveRequest(request, `${context}/`)
