@@ -150,19 +150,55 @@ module.exports = (
     });
 
     const razzleNodeExternalsFunc = (context, request, callback) => {
+      let res;
+      try {
+        res = resolveRequest(request, `${context}/`)
+      } catch (err) {
+        // If the request cannot be resolved, we need to tell webpack to
+        // "bundle" it so that webpack shows an error (that it cannot be
+        // resolved).
+        return callback();
+      }
+      // Same as above, if the request cannot be resolved we need to have
+      // webpack "bundle" it so it surfaces the not found error.
+      if (!res) {
+        return callback()
+      }
+      // This means we need to make sure its request resolves to the same
+       // package that'll be available at runtime. If it's not identical,
+       // we need to bundle the code (even if it _should_ be external).
+       let baseRes = null;
+       try {
+         baseRes = resolveRequest(request, `${paths.appPath}/`)
+       } catch (err) {
+         baseRes = null
+       }
 
-        let res;
+       // Same as above: if the package, when required from the root,
+       // would be different from what the real resolution would use, we
+       // cannot externalize it.
+       if (baseRes !== res) {
+         return callback()
+       }
+       // Anything else that is standard JavaScript within `node_modules`
+       // can be externalized.
+       if (res.match(/node_modules[/\\].*\.js$/)) {
+         const externalRequest =
+         path.posix.join(
+           paths.appPath,
+           path
+           .relative(
+             paths.appPath,
+             res
+           )
+           // Windows path normalization
+           .replace(/\\/g, '/')
+         )
+         return callback(undefined, `commonjs ${externalRequest}`)
+       }
 
-        try {
-          res = resolveRequest(request, `${context}/`)
-        } catch (err) {
-          // If the request cannot be resolved, we need to tell webpack to
-          // "bundle" it so that webpack shows an error (that it cannot be
-          // resolved).
-          return callback()
-        }
-
-        return nodeExternalsFunc(context, res, callback);
+       // Default behavior: bundle the code!
+       return callback()
     }
 
     // This is our base webpack config.
