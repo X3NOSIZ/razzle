@@ -4,7 +4,6 @@ const fs = require('fs-extra');
 const path = require('path');
 const webpack = require('webpack');
 const TerserPlugin = require('terser-webpack-plugin');
-const nodeExternals = require('webpack-node-externals');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const AssetsPlugin = require('assets-webpack-plugin');
 const StartServerPlugin = require('start-server-webpack-plugin');
@@ -138,85 +137,6 @@ module.exports = (
     const additionalModulePaths = modulesConfig.additionalModulePaths || [];
     const additionalAliases = modulesConfig.additionalAliases || {};
     const additionalIncludes = modulesConfig.additionalIncludes || [];
-
-    const nodeExternalsFunc = nodeExternals({
-      whitelist: [
-        IS_DEV ? 'webpack/hot/poll?300' : null,
-        /\.(eot|woff|woff2|ttf|otf)$/,
-        /\.(svg|png|jpg|jpeg|gif|ico)$/,
-        /\.(mp4|mp3|ogg|swf|webp)$/,
-        /\.(css|scss|sass|sss|less)$/,
-      ].filter(x => x),
-    });
-
-    const razzleNodeExternalsFunc = (context, request, callback) => {
-      const isLocal =
-        request.startsWith('.') ||
-        // Always check for unix-style path, as webpack sometimes
-        // normalizes as posix.
-        path.posix.isAbsolute(request) ||
-        // When on Windows, we also want to check for Windows-specific
-        // absolute paths.
-        (process.platform === 'win32' && path.win32.isAbsolute(request))
-
-      // Relative requires don't need custom resolution, because they
-      // are relative to requests we've already resolved here.
-      // Absolute requires (require('/foo')) are extremely uncommon, but
-      // also have no need for customization as they're already resolved.
-      if (isLocal) {
-        return callback()
-      }
-
-      let res;
-      try {
-        res = resolveRequest(request, `${context}/`)
-      } catch (err) {
-        // If the request cannot be resolved, we need to tell webpack to
-        // "bundle" it so that webpack shows an error (that it cannot be
-        // resolved).
-        return callback();
-      }
-      // Same as above, if the request cannot be resolved we need to have
-      // webpack "bundle" it so it surfaces the not found error.
-      if (!res) {
-        return callback()
-      }
-      // This means we need to make sure its request resolves to the same
-       // package that'll be available at runtime. If it's not identical,
-       // we need to bundle the code (even if it _should_ be external).
-       let baseRes = null;
-       try {
-         baseRes = resolveRequest(request, `${paths.appPath}/`)
-       } catch (err) {
-         baseRes = null
-       }
-
-       // Same as above: if the package, when required from the root,
-       // would be different from what the real resolution would use, we
-       // cannot externalize it.
-       if (baseRes !== res) {
-         return callback()
-       }
-       // Anything else that is standard JavaScript within `node_modules`
-       // can be externalized.
-       if (res.match(/node_modules[/\\].*\.js$/)) {
-         const externalRequest =
-         path.posix.join(
-           paths.appPath,
-           path
-           .relative(
-             paths.appPath,
-             res
-           )
-           // Windows path normalization
-           .replace(/\\/g, '/')
-         )
-         return callback(undefined, `commonjs ${externalRequest}`)
-       }
-
-       // Default behavior: bundle the code!
-       return callback()
-    }
 
     // This is our base webpack config.
     let config = {
@@ -376,7 +296,74 @@ module.exports = (
       };
 
       // We need to tell webpack what to bundle into our Node bundle.
-      config.externals = [razzleNodeExternalsFunc];
+      config.externals = [(context, request, callback) => {
+        const isLocal =
+          request.startsWith('.') ||
+          // Always check for unix-style path, as webpack sometimes
+          // normalizes as posix.
+          path.posix.isAbsolute(request) ||
+          // When on Windows, we also want to check for Windows-specific
+          // absolute paths.
+          (process.platform === 'win32' && path.win32.isAbsolute(request))
+
+        // Relative requires don't need custom resolution, because they
+        // are relative to requests we've already resolved here.
+        // Absolute requires (require('/foo')) are extremely uncommon, but
+        // also have no need for customization as they're already resolved.
+        if (isLocal) {
+          return callback()
+        }
+
+        let res;
+        try {
+          res = resolveRequest(request, `${context}/`)
+        } catch (err) {
+          // If the request cannot be resolved, we need to tell webpack to
+          // "bundle" it so that webpack shows an error (that it cannot be
+          // resolved).
+          return callback();
+        }
+        // Same as above, if the request cannot be resolved we need to have
+        // webpack "bundle" it so it surfaces the not found error.
+        if (!res) {
+          return callback()
+        }
+        // This means we need to make sure its request resolves to the same
+         // package that'll be available at runtime. If it's not identical,
+         // we need to bundle the code (even if it _should_ be external).
+         let baseRes = null;
+         try {
+           baseRes = resolveRequest(request, `${paths.appPath}/`)
+         } catch (err) {
+           baseRes = null
+         }
+
+         // Same as above: if the package, when required from the root,
+         // would be different from what the real resolution would use, we
+         // cannot externalize it.
+         if (baseRes !== res) {
+           return callback()
+         }
+         // Anything else that is standard JavaScript within `node_modules`
+         // can be externalized.
+         if (res.match(/node_modules[/\\].*\.js$/)) {
+           const externalRequest =
+           path.posix.join(
+             paths.appPath,
+             path
+             .relative(
+               paths.appPath,
+               res
+             )
+             // Windows path normalization
+             .replace(/\\/g, '/')
+           )
+           return callback(undefined, `commonjs ${externalRequest}`)
+         }
+
+         // Default behavior: bundle the code!
+         return callback()
+      }];
 
       // Specify webpack Node.js output path and filename
       config.output = {
